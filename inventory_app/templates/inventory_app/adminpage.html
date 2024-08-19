@@ -63,6 +63,33 @@
   });
 </script>
 
+  <script>
+    function checkServerStatus() {
+          fetch('/server-status/')
+            .then(response => response.json())
+            .then(data => {
+              var statusContainer = document.getElementById('statusContainer');
+              if (data.status === 'alive') {
+                statusContainer.classList.remove('status-dead');
+                statusContainer.classList.add('status-alive');
+                document.getElementById('statusText').textContent = 'Server is alive';
+              } else {
+                statusContainer.classList.remove('status-alive');
+                statusContainer.classList.add('status-dead');
+                document.getElementById('statusText').textContent = 'Server is not responding';
+              }
+            })
+            .catch(error => {
+              var statusContainer = document.getElementById('statusContainer');
+              statusContainer.classList.remove('status-alive');
+              statusContainer.classList.add('status-dead');
+              document.getElementById('statusText').textContent = 'Server is not responding';
+            });
+        }
+    
+        setInterval(checkServerStatus, 5000); // Check every 5 seconds
+    </script>
+
 
 <style>
   @keyframes blinker {  
@@ -84,6 +111,11 @@
 
 <body>
   <h1>Stock Management Console (Admin Panel)</h1>
+
+  <div id="statusContainer" class="status-container status-alive">
+        <div class="status-circle"></div>
+        <div id="statusText">Checking server status...</div>
+      </div>
 
   <div class="button-container">
     <form action="/" method="get">
