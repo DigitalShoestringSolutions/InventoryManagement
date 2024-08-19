@@ -113,6 +113,27 @@
         </script> -->
 
     <link rel="stylesheet" href="{% static 'inventory_app/css/admin.css' %}">
+
+    <style>
+        .status-container {
+          display: flex;
+          align-items: center;
+          margin-top: 10px;
+          font-weight: bold;
+        }
+        .status-circle {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          margin-right: 10px;
+        }
+        .status-alive .status-circle {
+          background-color: green;
+        }
+        .status-dead .status-circle {
+          background-color: red;
+        }
+      </style>
 </head>
 <body>
     <h1>Issue Form</h1>
