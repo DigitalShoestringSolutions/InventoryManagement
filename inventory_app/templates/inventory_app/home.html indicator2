@@ -77,6 +77,28 @@
     
         setInterval(checkServerStatus, 5000); // Check every 5 seconds
     </script>
+
+  <style>
+        .status-container {
+          display: flex;
+          align-items: center;
+          margin-top: 10px;
+          font-weight: bold;
+        }
+        .status-circle {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          margin-right: 10px;
+        }
+        .status-alive .status-circle {
+          background-color: green;
+        }
+        .status-dead .status-circle {
+          background-color: red;
+        }
+      </style>
+  
 </head>
 
 
