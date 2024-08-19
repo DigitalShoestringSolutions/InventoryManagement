@@ -50,7 +50,8 @@ def home(request):
 
     return render(request, 'inventory_app/home.html', context)
 
-
+def server_status(request):
+    return JsonResponse({'status': 'alive'})
 
 
 def analyse(request):
