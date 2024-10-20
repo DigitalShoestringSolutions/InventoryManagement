@@ -445,11 +445,14 @@ def get_locations_for_item(request, item_id):
 
 
 
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+
 def order_view(request):
     if request.method == 'POST':
         # Retrieve form data
         item_id = request.POST.get('item')
-        location_id = request.POST.get('location')  # This will be the ID of the location
+        location_id = request.POST.get('location')
         supplier = request.POST.get('supplier')
         units = request.POST.get('units') 
         minimum_units = request.POST.get('minimum_units')
@@ -488,18 +491,12 @@ def order_view(request):
         if not order_lead_time:
             errors.append("Order lead time")
 
-        # If there are any validation errors, show a single message listing all missing fields
+        # If there are any validation errors, return them as JSON
         if errors:
-            error_message = "Please fill out the following fields: " + ", ".join(errors)
-            messages.error(request, error_message)
-            items = InventoryItem.objects.all().order_by('item')
-            orders = OrderItem.objects.all().order_by('item')
-            return render(request, 'inventory_app/order.html', {'items': items, 'orders': orders})
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
 
-        # Fetch the InventoryItem instance
+        # Fetch the InventoryItem and Location instances
         item = get_object_or_404(InventoryItem, id=item_id)
-
-        # Fetch the Location instance
         location = get_object_or_404(Location, id=location_id)
 
         # Record the order item
@@ -509,9 +506,9 @@ def order_view(request):
             supplier=supplier,
             on_order=int(unit_ord),
             quantity_per_unit=units,
-            unit=int(units),  # Assuming 'units' refers to 'unit' here; adjust if needed
+            unit=int(units),
             minimum_unit=int(minimum_units),
-            cost=cost,  # Make sure to convert the string to a Decimal
+            cost=cost,
             request_date=request_date,
             requested_by=requested_by,
             oracle_order_date=oracle_order_date,
@@ -519,13 +516,10 @@ def order_view(request):
             order_lead_time=order_lead_time
         )
 
-        messages.success(request, 'Order successfully recorded.')
-        items = InventoryItem.objects.all().order_by('item')
-        orders = OrderItem.objects.all().order_by('item')
+        # Return a success message as JSON
+        return JsonResponse({'success': True, 'message': 'Order successfully recorded.'})
 
-        return render(request, 'inventory_app/order.html', {'items': items, 'orders': orders})
-    else:
-        return HttpResponse("Invalid request", status=400)
+    return JsonResponse({'success': False, 'message': 'Invalid request'}, status=400)
 
 
 
