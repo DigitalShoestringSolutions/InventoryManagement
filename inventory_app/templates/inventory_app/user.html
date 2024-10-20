@@ -190,7 +190,7 @@
 </form>
 
 
-{% if messages %}
+<!-- {% if messages %}
 <script>
     window.onload = function() {
         {% for message in messages %}
@@ -198,6 +198,18 @@
         {% endfor %}
     }
 </script>
+{% endif %} -->
+
+{% if messages %}
+    <div class="alert alert-danger">
+        <ul class="messages">
+            {% for message in messages %}
+                <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+            {% endfor %}
+        </ul>
+    </div>
 {% endif %}
+
+
 </body>
 </html>
