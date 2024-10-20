@@ -110,7 +110,8 @@
                     location.reload();  // Optionally reload the page or redirect
                 },
                 error: function(xhr) {
-                    alert('Error updating units. Check server connection');
+                    // alert('Error updating units. ' + xhr.responseText);
+                    alert('Error updating units. Check connection to server. ');
                 }
             });
         });
