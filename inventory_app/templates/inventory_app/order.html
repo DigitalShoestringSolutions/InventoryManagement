@@ -60,75 +60,6 @@
             setTimeout(checkDates, 500); // Adjust delay as necessary
         });
         </script>
-        
-    
-
-    <!-- <script>
-        $(document).ready(function() {
-            $('#item_select').change(function() {
-                var itemId = $(this).val();
-                if (itemId) {
-                    $.getJSON(`/get-locations-for-item/${itemId}/`, function(locations) {
-                        var locationSelect = $('#location_select');
-                        locationSelect.empty(); // Clear existing options
-                        locationSelect.append($('<option>').val('').text('Select a Location'));
-                        $.each(locations, function(i, location) {
-                            locationSelect.append($('<option>').val(location.id).text(location.name));
-                        });
-                    }).fail(function() {
-                        console.error('Error fetching locations');
-                    });
-
-                    // Existing code to fetch item details
-                    $.getJSON(`/get-item-details/${itemId}`, function(data) {
-                        $('#supplier').val(data.supplier || 'N/A');
-                        $('#units').val(data.units);
-                        $('#minimum_units').val(data.minimum_units);
-                        $('#cost').val(data.cost);
-                        $('#withdrawal_date').val(new Date().toISOString().slice(0, 10));
-                    }).fail(function() {
-                        console.error('Error fetching item details');
-                        $('#supplier').val('');
-                        $('#units').val('');
-                        $('#minimum_units').val('');
-                        $('#cost').val('');
-                    });
-                } else {
-                    $('#location_select').empty().append($('<option>').val('').text('Select a Location'));
-                    $('#supplier').val('');
-                    $('#units').val('');
-                    $('#minimum_units').val('');
-                    $('#cost').val('');
-                }
-            });
-        });
-
-    </script>
-
-    <script>
-        $(document).ready(function() {
-            // Your existing $(document).ready() code
-
-            // Call checkDates function after the document is fully loaded
-            checkDates();
-        });
-
-        function checkDates() {
-            var today = new Date().setHours(0, 0, 0, 0); // Today's date without time part
-            $('#stock_table tbody tr').each(function() {
-                // Assuming "Expected by" is the 5th column (index 4)
-                var expectedByCell = $(this).find('td').eq(4);
-                var expectedDateStr = expectedByCell.text();
-                var expectedDate = new Date(expectedDateStr).setHours(0, 0, 0, 0);
-
-                if (expectedDate < today) {
-                    // Apply blinking effect if the expected date has passed
-                    expectedByCell.addClass('blinkingRed');
-                }
-            });
-        }
-
-    </script> -->
 
     <script>
         function filterBySecondColumn() {{
@@ -176,6 +107,93 @@
     
         setInterval(checkServerStatus, 5000); // Check every 5 seconds
     </script>
+
+
+
+<script>
+    $(document).ready(function() {
+        // Handle form submission via AJAX
+        $('#itemForm').on('submit', function(e) {
+            e.preventDefault();  // Prevent the default form submission
+
+            var data = $(this).serialize();  // Serialize the form data
+
+            $.ajax({
+                url: "{% url 'order_view' %}",  // URL for form submission
+                method: 'POST',
+                data: data,
+                dataType: 'json',  // Ensure the response is treated as JSON
+                success: function(response) {
+                    if (response.success) {
+                        alert('Order successfully recorded!');  // Pop-up success message
+                        location.reload();  // Reload the page to reset the form
+                    } else {
+                        let errorMessage = "Please fill out the following fields:\n" + response.errors.join(", ");
+                        alert(errorMessage);  // Show validation errors in a pop-up
+                    }
+                },
+                error: function(xhr) {
+                    // Handle server errors and make sure the error messages are displayed properly
+                    if (xhr.responseJSON && xhr.responseJSON.errors) {
+                        let errorMessage = "Please fill out the following fields:\n" + xhr.responseJSON.errors.join(", ");
+                        alert(errorMessage);  // Show validation errors in a pop-up
+                    } else {
+                        alert('Information could not be submitted. Check server connection.');  // General error
+                    }
+                }
+            });
+        });
+
+        // Handle change of selected item and fetch details via AJAX
+        $('#item_select').change(function() {
+            var itemId = $(this).val();
+            if (itemId) {
+                // Fetch item details based on selected item
+                $.getJSON(`/get-item-details/${itemId}`, function(data) {
+                    $('#supplier').val(data.supplier || 'N/A');
+                    $('#units').val(data.units);
+                    $('#minimum_units').val(data.minimum_units);
+                    $('#cost').val(data.cost);
+                    $('#withdrawal_date').val(new Date().toISOString().slice(0, 10));
+                }).fail(function() {
+                    console.error('Error fetching item details');
+                    $('#supplier').val('');
+                    $('#units').val('');
+                    $('#minimum_units').val('');
+                    $('#cost').val('');
+                });
+
+                // Fetch locations based on selected item
+                $.getJSON(`/get-locations-for-item/${itemId}/`, function(locations) {
+                    var locationSelect = $('#location_select');
+                    locationSelect.empty();  // Clear existing options
+                    locationSelect.append('<option value="">Select a Location</option>');  // Default option
+                    $.each(locations, function(index, location) {
+                        locationSelect.append($('<option></option>').attr('value', location.id).text(location.name));
+                    });
+                }).fail(function() {
+                    console.error('Error fetching item locations');
+                    $('#location_select').empty().append('<option value="">Select a Location</option>');  // Reset if error
+                });
+            } else {
+                // Reset fields if no item is selected
+                $('#supplier').val('');
+                $('#units').val('');
+                $('#minimum_units').val('');
+                $('#cost').val('');
+                $('#location_select').empty().append('<option value="">Select a Location</option>');  // Reset locations
+            }
+        });
+
+        // Optionally, trigger the change event on page load (if you want to auto-select an item)
+        // $('#item_select').trigger('change');
+    });
+</script>
+
+
+
+
+
 
     <link rel="stylesheet" href="{% static 'inventory_app/css/admin.css' %}">
 
