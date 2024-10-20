@@ -321,20 +321,15 @@ def submit_withdrawal(request):
         if not withdrawn_by:
             errors.append("Withdrawn by")
 
-        # If there are any validation errors, show a single message listing all missing fields
+        # If there are any validation errors, return them as JSON
         if errors:
-            error_message = "Please fill out the following fields: " + ", ".join(errors)
-            messages.error(request, error_message)
-            items = InventoryItem.objects.all().order_by('item')
-            return render(request, 'inventory_app/user.html', {'items': items})
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
 
         # Further validation: Check if units_withdrawn is a valid integer
         try:
             units_withdrawn = int(units_withdrawn)
         except ValueError:
-            messages.error(request, "Units withdrawn must be a valid integer.")
-            items = InventoryItem.objects.all().order_by('item')
-            return render(request, 'inventory_app/user.html', {'items': items})
+            return JsonResponse({'success': False, 'errors': ["Units withdrawn must be a valid integer."]}, status=400)
 
         # Fetch the InventoryItem instance
         item = get_object_or_404(InventoryItem, id=item_id)
@@ -355,13 +350,10 @@ def submit_withdrawal(request):
             date_withdrawn=timezone.now()
         )
 
-        messages.success(request, 'Withdrawal successfully recorded.')
-        items = InventoryItem.objects.all().order_by('item')
+        # Return success response
+        return JsonResponse({'success': True, 'message': 'Withdrawal successfully recorded.'})
 
-        return render(request, 'inventory_app/user.html', {'items': items})
-    else:
-        return HttpResponse("Invalid request", status=400)
-
+    return JsonResponse({'success': False, 'message': 'Invalid request'}, status=400)
 
 
 
@@ -452,9 +444,6 @@ def get_locations_for_item(request, item_id):
     return JsonResponse(list(locations), safe=False)
 
 
-from django.contrib import messages
-from django.shortcuts import get_object_or_404, render
-from django.http import HttpResponse
 
 def order_view(request):
     if request.method == 'POST':
