@@ -244,30 +244,35 @@ def admin_view(request):
 
     if request.method == 'POST':
         if 'add' in request.POST:  # If the add operation is requested
-            add_form = StockAddForm(request.POST)  # Reinitialise with posted data
+            add_form = StockAddForm(request.POST)  # Reinitialize with posted data
             if add_form.is_valid():
                 add_form.save()
+                messages.success(request, "Stock item successfully added.")
                 return redirect('admin_view')  # Redirect to avoid double posting
+            else:
+                # Collect all errors for the add form
+                for field, errors in add_form.errors.items():
+                    messages.error(request, f"{field}: {', '.join(errors)}")
+
         elif 'update' in request.POST:  # If the update operation is requested
-            update_form = StockUpdateForm(request.POST)  # Reinitialise with posted data
+            update_form = StockUpdateForm(request.POST)  # Reinitialize with posted data
             if update_form.is_valid():
                 update_form.save()
+                messages.success(request, "Stock item successfully updated.")
                 return redirect('admin_view')  # Redirect to avoid double posting
+            else:
+                # Collect all errors for the update form
+                for field, errors in update_form.errors.items():
+                    messages.error(request, f"{field}: {', '.join(errors)}")
 
     items = InventoryItem.objects.all()  # Fetch items regardless of POST or GET request
-
-    # Check if forms are valid and set error messages if not
-    if 'add' in request.POST and not add_form.is_valid():
-        add_error_message = "Please fill out all required fields."
-    else:
-        add_error_message = None
 
     return render(request, 'inventory_app/adminpage.html', {
         'update_form': update_form,
         'add_form': add_form,
         'items': items,
-        'add_error_message': add_error_message,
     })
+
 
 
 def get_item_details(request, item_id):
@@ -296,44 +301,59 @@ def get_item_locations(request, item_id):
 
 
 
+
 def submit_withdrawal(request):
     if request.method == 'POST':
+        # Retrieve form data
         item_id = request.POST.get('item')
-        location_id= request.POST.get('location')
-        units_withdrawn = int(request.POST.get('units_withdrawn'))
+        location_id = request.POST.get('location')
+        units_withdrawn = request.POST.get('units_withdrawn')
         withdrawn_by = request.POST.get('withdrawn_by')
-        
-        # Update InventoryItem
-        # item = InventoryItem.objects.get(id=item_id)
-        # item.unit -= units_withdrawn
-        # item.save()
+
+        # Validation: Check if all required fields are provided
+        errors = []
+        if not item_id:
+            errors.append("Item")
+        if not location_id:
+            errors.append("Location")
+        if not units_withdrawn:
+            errors.append("Units withdrawn")
+        if not withdrawn_by:
+            errors.append("Withdrawn by")
+
+        # If there are any validation errors, return them as JSON
+        if errors:
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+        # Further validation: Check if units_withdrawn is a valid integer
+        try:
+            units_withdrawn = int(units_withdrawn)
+        except ValueError:
+            return JsonResponse({'success': False, 'errors': ["Units withdrawn must be a valid integer."]}, status=400)
 
         # Fetch the InventoryItem instance
         item = get_object_or_404(InventoryItem, id=item_id)
-        
+
         # Fetch the Location instance
         location = get_object_or_404(Location, id=location_id)
-        
+
         # Update InventoryItem units
         item.unit -= units_withdrawn
         item.save()
-        
-        # Record the withdrawal with Location instance
+
+        # Record the withdrawal
         ItemWithdrawal.objects.create(
             item=item,
-            location=location,  # Assign the Location instance here
+            location=location,
             units_withdrawn=units_withdrawn,
             withdrawn_by=withdrawn_by,
             date_withdrawn=timezone.now()
         )
-        
-        messages.success(request, 'Successfully recorded.')
-        items = InventoryItem.objects.all().order_by('item')
 
-        return render(request, 'inventory_app/user.html', {'items': items})
-    else:
-        return HttpResponse("Invalid request", status=400)
+        # Return success response
+        return JsonResponse({'success': True, 'message': 'Withdrawal successfully recorded.'})
 
+    return JsonResponse({'success': False, 'message': 'Invalid request'}, status=400)
 
 
 
@@ -424,10 +444,15 @@ def get_locations_for_item(request, item_id):
     return JsonResponse(list(locations), safe=False)
 
 
+
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+
 def order_view(request):
     if request.method == 'POST':
+        # Retrieve form data
         item_id = request.POST.get('item')
-        location_id = request.POST.get('location')  # This will be the ID of the location
+        location_id = request.POST.get('location')
         supplier = request.POST.get('supplier')
         units = request.POST.get('units') 
         minimum_units = request.POST.get('minimum_units')
@@ -439,19 +464,51 @@ def order_view(request):
         oracle_po = request.POST.get('oracle_po')
         order_lead_time = request.POST.get('order_lead_time')
 
+        # Validation: Check if all required fields are provided
+        errors = []
+        if not item_id:
+            errors.append("Item")
+        if not location_id:
+            errors.append("Location")
+        if not supplier:
+            errors.append("Supplier")
+        if not units:
+            errors.append("Units")
+        if not minimum_units:
+            errors.append("Minimum units")
+        if not cost:
+            errors.append("Cost")
+        if not unit_ord:
+            errors.append("Units on order")
+        if not request_date:
+            errors.append("Request date")
+        if not requested_by:
+            errors.append("Requested by")
+        if not oracle_order_date:
+            errors.append("Oracle order date")
+        if not oracle_po:
+            errors.append("Oracle PO")
+        if not order_lead_time:
+            errors.append("Order lead time")
+
+        # If there are any validation errors, return them as JSON
+        if errors:
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
+
+        # Fetch the InventoryItem and Location instances
         item = get_object_or_404(InventoryItem, id=item_id)
-        location = get_object_or_404(Location, id=location_id)  # Fetch the Location instance
-        
+        location = get_object_or_404(Location, id=location_id)
+
         # Record the order item
         OrderItem.objects.create(
             item=item,
-            location=location,  # Use the Location instance here
+            location=location,
             supplier=supplier,
             on_order=int(unit_ord),
             quantity_per_unit=units,
-            unit=int(units),  # Assuming 'units' refers to 'unit' here; adjust if needed
+            unit=int(units),
             minimum_unit=int(minimum_units),
-            cost=cost,  # Make sure to convert the string to a Decimal
+            cost=cost,
             request_date=request_date,
             requested_by=requested_by,
             oracle_order_date=oracle_order_date,
@@ -459,13 +516,11 @@ def order_view(request):
             order_lead_time=order_lead_time
         )
 
-        messages.success(request, 'Order successfully recorded.')
-        items = InventoryItem.objects.all().order_by('item')
-        orders = OrderItem.objects.all().order_by('item')
-        
-        return render(request, 'inventory_app/order.html', {'items': items, 'orders': orders})
-    else:
-        return HttpResponse("Invalid request", status=400)
+        # Return a success message as JSON
+        return JsonResponse({'success': True, 'message': 'Order successfully recorded.'})
+
+    return JsonResponse({'success': False, 'message': 'Invalid request'}, status=400)
+
 
 
 
