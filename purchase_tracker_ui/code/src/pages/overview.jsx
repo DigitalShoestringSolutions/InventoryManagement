@@ -6,7 +6,7 @@ import APIBackend from '../RestAPI'
 
 const get_url = (config) => ((config.db.host ? config.db.host : window.location.hostname) + (config.db.port ? ":" + config.db.port : ""))
 
-export function OverviewPage({ config }) {
+export function OverviewPage({ config, return_url }) {
     const navigate = useNavigate();
     const queryClient = useQueryClient()
 
@@ -21,7 +21,7 @@ export function OverviewPage({ config }) {
 
     const complete_mutation = useMutation(
         async (order_id) => {
-            let url = "http://" + get_url(config) + "/api/order/" + order_id+"/"
+            let url = "http://" + get_url(config) + "/api/order/" + order_id+"/complete/"
             console.log(url)
             return APIBackend.api_patch(url, {complete:true}).then((response) => {
                 const get_json = async (response) => {
@@ -44,7 +44,7 @@ export function OverviewPage({ config }) {
     }
 
     const on_edit = (order_id) => {
-
+        navigate("/order/"+order_id)
     }
 
     if (isLoading)
@@ -65,6 +65,13 @@ export function OverviewPage({ config }) {
                         className="bi bi-truck"
                         onClick={() => navigate("/delivery")}
                     >{" "}New Delivery</Button>
+                    {return_url?
+                        <Button
+                            variant="outline-secondary"
+                            className="bi bi-arrow-left"
+                            onClick={() => window.location.assign(return_url)}
+                        >{" "}Back</Button>
+                    :null}
                 </ButtonGroup>
             </div>
         </Card.Header>

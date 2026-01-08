@@ -2,32 +2,31 @@ import 'bootstrap/dist/css/bootstrap.css';
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import Spinner from 'react-bootstrap/Spinner'
 import Card from 'react-bootstrap/Card'
-import { Form, InputGroup, ToastContainer, Toast, OverlayTrigger, Tooltip, Button, ButtonGroup } from "react-bootstrap";
 import Container from 'react-bootstrap/Container'
-import { MQTTProvider, useMQTTState, useMQTTDispatch } from './MQTTContext'
+import { MQTTProvider } from './MQTTContext'
 import React from 'react';
 import { custom_new_message_action, CustomReducer } from './custom_mqtt';
 import { ToastProvider } from './ToastContext'
-import { BrowserRouter, Routes, Route, Outlet, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom'
 
 import {
   QueryClient,
   QueryClientProvider,
 } from 'react-query'
 
-import * as dayjs from 'dayjs'
-import { load_data } from './fetch_data'
-import { DELIVERY_SLOT, DISPLAY_STATE } from "./constants";
 import './app.css'
 
 import { NewDeliveryPage } from './pages/new_delivery'
-import { NewOrderPage } from './pages/new_order';
+import { AdminPage } from './pages/manage_minimums_page';
 import { OverviewPage } from './pages/overview';
+import { WithdrawPage } from './pages/withdraw_page';
+import { TransferPage } from './pages/transfer_page';
 
 // import * as dayjs from 'dayjs'
 // import * as duration from 'dayjs/plugin/duration';
 // import * as relativeTime from 'dayjs/plugin/relativeTime';
 import { load_config } from './fetch_data';
+import { HistoryPage } from './pages/history_page';
 
 // dayjs.extend(duration);
 // dayjs.extend(relativeTime)
@@ -83,35 +82,24 @@ function App() {
 
 
 function Routing(props) {
-  let [return_url, setReturnURL] = React.useState(undefined)
   return (
     <Routes>
-      <Route path='/' element={<Base {...props} return_url={return_url} setReturnURL={setReturnURL} />}>
-        <Route path="/order" element={<NewOrderPage {...props} />} />
-        <Route path="/order/:order_id" element={<NewOrderPage {...props} />} />
-        <Route path="/delivery" element={<NewDeliveryPage {...props} />} />
-        <Route index element={<OverviewPage {...props} return_url={return_url} />}></Route>
+      <Route path='/' element={<Base {...props}/>}>
+        <Route path="/admin" element={<AdminPage {...props} />} />
+        <Route path="/withdraw" element={<WithdrawPage {...props} />} />
+        <Route path="/transfer" element={<TransferPage {...props} />} />
+        <Route path="/history" element={<HistoryPage {...props} />} />
+
+        <Route index element={<OverviewPage {...props} />}></Route>
       </Route>
     </Routes>
   )
 }
 
-function Base({ return_url, setReturnURL }) {
-  let navigate = useNavigate()
-  let params = new URLSearchParams(document.location.search);
-  let new_return_url = params.get("return");
-
-  React.useEffect(() => {
-    if (new_return_url !== null && new_return_url !== return_url) {
-      setReturnURL(new_return_url)
-      navigate("/", { replace: true })
-    }
-  }, [new_return_url, return_url])
-
-
+function Base({ }) {
   return <Container fluid className="p-0 px-2 d-flex flex-column">
     <Container fluid className="flex-grow-1 p-0 mb-5 ">
-      <Outlet />
+          <Outlet />
     </Container>
   </Container>
 }

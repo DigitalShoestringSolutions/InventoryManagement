@@ -3,7 +3,7 @@ import { Form, Card, Button, Alert, Container, Spinner, Row, Col, Table, Accordi
 import { useMutation, useQuery } from "react-query"
 import APIBackend from '../RestAPI'
 import * as dayjs from 'dayjs'
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import { AddItemsPanel } from '../components/add_item_panel'
 import { NewSupplierModal } from "./new_supplier";
@@ -26,9 +26,7 @@ const get_url = (config) => ((config.db.host ? config.db.host : window.location.
 */
 
 
-export function NewOrderPage({ config }) {
-    let { order_id } = useParams()
-
+export function newAllocationPage({ config }) {
     let navigate = useNavigate()
     let [purchase_order_reference, setPurchaseOrder] = React.useState("")
     let [ordered_by, setOrderedBy] = React.useState("")
@@ -38,7 +36,6 @@ export function NewOrderPage({ config }) {
     let [date_expected_delivery, setDateExpectedDelivery] = React.useState(dayjs())
 
     let [selected_items, setSelectedItems] = React.useState({})
-    let [available_items_list, setAvailableItemsList] = React.useState([])
 
     let [validated, setValidated] = React.useState(false)
     let [errors, setErrors] = React.useState({})
@@ -57,73 +54,37 @@ export function NewOrderPage({ config }) {
             )
     )
 
-    const { data: order_details } = useQuery(
-        ['order_details', order_id],
+    const { isLoading: supplier_loading, error: supplier_errro, data: supplier_details } = useQuery(
+        ['supplied_item', supplier],
         () =>
-            fetch('http://' + url + '/api/order/' + order_id + '/').then(res =>
+            fetch('http://' + url + '/api/supplier/' + supplier+'/').then(res =>
                 res.json()
             ),
-        {
-            // The query will not execute until the supplier exists
-            enabled: !!order_id,
-            onSuccess: (data) => {
-                setSupplier(data.supplier.id)
-                setPurchaseOrder(data.purchase_order_reference)
-                setOrderedBy(data.ordered_by)
-                setDateOrderPlaced(dayjs(data.date_order_placed))
-                setDateExpectedDelivery(dayjs(data.date_expected_delivery))
-                setSelectedItems(data.items.reduce((acc, elem) => {
-                    acc[elem.item.id] = {
-                        sort_key: elem.item.id,
-                        item: elem.item,
-                        quantity: elem.quantity_requested
-                    }; return acc
-                }, {}))
-            }
-        }
-    )
-    const { data: supplier_details } = useQuery(
-        ['supplied_item', supplier],
-        () => fetch('http://' + url + '/api/supplier/' + supplier + '/').then(res => res.json()),
         {
             // The query will not execute until the supplier exists
             enabled: !!supplier,
         }
     )
 
-    React.useEffect(() => {
-        if (supplier_details) {
-            let tagged_supplied_items = supplier_details.supplied_items.map(elem => ({ ...elem, sort_key: elem.item.id }))
-            setAvailableItemsList(tagged_supplied_items)
-        }
-    }, [supplier_details])
-
     const create_mutation = useMutation(
         async (data) => {
-            if (order_id) { //update
-                let url = "http://" + get_url(config) + "/api/order/" + order_id + "/"
-                return APIBackend.api_put(url, data).then((response) => {
-                    const get_json = async (response) => {
-                        let output = await response.json()
-                        return { status: response.status, payload: output }
-                    }
-                    return get_json(response)
-                })
-            } else { //create
-                let url = "http://" + get_url(config) + "/api/order/"
-                return APIBackend.api_post(url, data).then((response) => {
-                    const get_json = async (response) => {
-                        let output = await response.json()
-                        return { status: response.status, payload: output }
-                    }
-                    return get_json(response)
-                })
-            }
+            let url = "http://" + get_url(config) + "/api/order/"
+            console.log(url)
+            return APIBackend.api_post(url, data).then((response) => {
+                const get_json = async (response) => {
+                    let output = await response.json()
+                    return { status: response.status, payload: output }
+                }
+                return get_json(response)
+            })
         },
         {
             onSuccess: (result) => {
                 console.log(result)
-                if (result.status === 201) {
+                if (result.status !== 201) {
+                    setValidated(true)
+                    setErrors(result.payload)
+                } else {
                     setValidated(false)
                     setErrors({})
                     setPurchaseOrder("")
@@ -132,13 +93,6 @@ export function NewOrderPage({ config }) {
                     setDateExpectedDelivery(dayjs())
                     setDateOrderPlaced(dayjs())
                     setJustCreated(result.payload)
-                } else if (result.status === 200) {
-                    setValidated(false)
-                    setErrors({})
-                    setJustCreated(result.payload)
-                } else {
-                    setValidated(true)
-                    setErrors(result.payload)
                 }
             }
         }
@@ -160,7 +114,7 @@ export function NewOrderPage({ config }) {
         <Card className="mt-3">
             <Card.Header>
                 <div className="d-flex flex-row align-items-baseline justify-content-between flex-wrap">
-                    <h2>{order_id ? "Edit Order" : "New Order"}</h2>
+                    <h2>New Order</h2>
                     <Button
                         variant="outline-secondary"
                         className="bi bi-arrow-left"
@@ -221,7 +175,7 @@ export function NewOrderPage({ config }) {
                     <AddItemsPanel
                         selected_items={selected_items}
                         setSelectedItems={setSelectedItems}
-                        item_list={available_items_list}
+                        item_list={supplier_details?.supplied_items}
                         available_title={<div className="d-flex flex-row align-items-baseline justify-content-between flex-wrap">
                             <span>Available from Supplier</span>
                             <Button variant="outline-primary" size="sm" onClick={() => setSuppliedItemModal(true)}>Edit Supplied Items</Button>
@@ -246,7 +200,6 @@ export function NewOrderPage({ config }) {
                                 }
                             ]
                         }
-                        id_key="sort_key"
                     />
                     <div className="d-grid mt-2">
                         <Button type="submit" disabled={create_mutation.isPending}>Save</Button>
@@ -260,7 +213,7 @@ export function NewOrderPage({ config }) {
                 {create_mutation.isSuccess ?
                     (just_created.id ?
                         <Alert variant="success" className="d-flex align-items-baseline justify-content-between">
-                            <span>Order {order_id?"saved":"created"}.</span>
+                            <span>Order created.</span>
                             <Button variant="success" onClick={() => navigate('/')}>Back to Order List</Button>
                         </Alert>
                         : <Alert variant="warning" className="d-flex align-items-baseline justify-content-between">Please fill out the required fields.</Alert>)

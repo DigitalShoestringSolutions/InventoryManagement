@@ -301,6 +301,42 @@ def eventsAtParent(request,location_link):
     return Response(serializer.data)
 
 
+@api_view(('GET',))
+@renderer_classes((JSONRenderer,BrowsableAPIRenderer,CSVRenderer))
+def eventsBetweenParents(request, from_parent, to_parent):
+    t_start = request.GET.get('from', None)
+    t_end = request.GET.get('to', None)
+    print(f"all events {t_start}>{t_end}")
+
+    from_node_type, from_node_id = Node.parse_combined_id(from_parent)
+    to_node_type, to_node_id = Node.parse_combined_id(to_parent)
+
+    q = Q()
+
+    if from_node_id != "":
+        from_parent = Node.objects.get(id=from_node_id, type__key=from_node_type)
+        q = q & Q(from_parent=from_parent)
+    else:
+        q = q & Q(from_parent__type=from_node_type)
+
+    if to_node_id != "":
+        to_parent = Node.objects.get(id=to_node_id, type__key=to_node_type)
+        q = q & Q(to_parent=to_parent)
+    else:
+        q = q & Q(to_parent__type=to_node_type)
+
+    if t_start:
+        start_dt = dateutil.parser.isoparse(t_start)
+        q = q & Q(timestamp__gte=start_dt)
+
+    if t_end:
+        end_dt = dateutil.parser.isoparse(t_end)
+        q = q & Q(timestamp__lte=end_dt)
+
+    qs = Event.objects.filter(q).order_by('-timestamp')
+    serializer = EventSerializer(qs,many=True)
+    return Response(serializer.data)
+
 @api_view(('POST',))
 @renderer_classes((JSONRenderer,BrowsableAPIRenderer))
 def transferRequest(request):

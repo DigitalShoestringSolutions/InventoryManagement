@@ -13,7 +13,6 @@ export function SuppliedItemsModal({ config, show, onHide, supplier }) {
     let [new_item_modal,setNewItemModal] = React.useState(false)
     let [selected_items, setSelectedItems] = React.useState({})
 
-    
 
     const { data: supplier_details } = useQuery(
         ['supplied_item', supplier],

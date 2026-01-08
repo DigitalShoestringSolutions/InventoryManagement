@@ -138,6 +138,8 @@ class OrderItemWriteSerializer(serializers.ModelSerializer):
 
 
 class OrderUpdateSerializer(serializers.ModelSerializer):
+    items = OrderItemWriteSerializer(many=True)
+
     class Meta:
         model = models.Order
         fields = [
@@ -149,8 +151,52 @@ class OrderUpdateSerializer(serializers.ModelSerializer):
             "date_order_placed",
             "date_expected_delivery",
             "complete",
+            "items"
         ]
         read_only_fields = ["id"]
+
+    def update(self,order_instance, validated_data):
+        print(validated_data)
+        order_instance.supplier = validated_data["supplier"]
+        order_instance.ordered_by = validated_data["ordered_by"]
+        order_instance.purchase_order_reference = validated_data[
+            "purchase_order_reference"
+        ]
+        order_instance.date_enquired = (
+            validated_data["date_enquired"]
+            if validated_data.get("date_enquired")
+            else order_instance.date_enquired
+        )
+        order_instance.date_order_placed = validated_data["date_order_placed"]
+        order_instance.date_expected_delivery = validated_data["date_expected_delivery"]
+        order_instance.save()
+
+        updated_items = validated_data["items"]
+        print(updated_items)
+        existing_items = {
+            entry.item.id: entry for entry in order_instance.items.all()
+        }
+
+        for entry in updated_items:
+            entry_item = entry["item"]
+            if entry_item.id in existing_items:
+                ## update
+                existing_instance = existing_items[entry_item.id]
+                existing_instance.quantity_requested = entry["quantity_requested"]
+                existing_instance.save()
+                del existing_items[entry_item.id]
+            else:
+                ## new
+                models.OrderItem.objects.create(
+                    order=order_instance,
+                    item=entry_item,
+                    quantity_requested=entry["quantity_requested"],
+                )
+
+        for entry in existing_items.values():
+            entry.delete()
+
+        return order_instance
 
 
 class OrderReadSerializer(serializers.ModelSerializer):

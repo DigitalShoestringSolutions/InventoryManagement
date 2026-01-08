@@ -14,16 +14,16 @@ export function AddItemsPanel({
     map_on_select = [],
     group_header_label = (first_entry) => "undefined",
     group_key = undefined,
-    id_key = "id"
+    right_to_left = true
 }) {
-    let available_items = item_list ? item_list.filter(elem => Object.keys(selected_items).indexOf(String(elem[id_key])) === -1) : []
+    let available_items = item_list ? item_list.filter(elem => Object.keys(selected_items).indexOf(String(elem.id)) === -1) : []
 
     if (item_list == undefined)
         return
 
     const select_item = (item) => {
         setSelectedItems(prev => {
-            let entry = item_list.find(elem => elem[id_key] === item)
+            let entry = item_list.find(elem => elem.id === item)
             let new_entry = { ...entry }
             map_on_select.forEach(mapping => {
                 if (mapping.from)
@@ -49,43 +49,87 @@ export function AddItemsPanel({
         setSelectedItems(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }))
     }
 
-    return <Row className="mt-2">
-        <Col>
-            <Card>
-                <Card.Header className="mb-0">{selected_title}</Card.Header>
-                <Card.Body className="p-1">
-                    <SelectedItemList
-                        selected_items={selected_items}
-                        set_field={set_field}
-                        unselect_item={unselect_item}
-                        fields={selected_fields}
-                    />
-                </Card.Body>
-            </Card>
-        </Col>
-        <Col>
-            <Card>
-                <Card.Header className="mb-0">{available_title}</Card.Header>
-                <Card.Body className="p-1">
-                    {group_key ?
-                        <AvailableItemsAccordian
-                            available_items={available_items}
-                            select_item={select_item}
-                            fields={available_fields}
-                            group_key={group_key}
-                            group_header_label={group_header_label}
-                            id_key={id_key}
-                        />
-                        :
-                        <AvailableItemsList available_items={available_items} select_item={select_item} fields={available_fields} id_key={id_key} />
-                    }
-                </Card.Body>
-            </Card>
-        </Col>
-    </Row>
+    if (right_to_left) {
+        return <Row className="mt-2">
+            <Col>
+                <SelectPanel
+                    selected_fields={selected_fields}
+                    selected_title={selected_title}
+                    selected_items={selected_items}
+                    set_field={set_field}
+                    unselect_item={unselect_item}
+                />
+            </Col>
+            <Col>
+                <AvailablePanel
+                    available_title={available_title}
+                    available_items={available_items}
+                    select_item={select_item}
+                    available_fields={available_fields}
+                    group_key={group_key}
+                    group_header_label={group_header_label}
+                />
+            </Col>
+        </Row>
+    } else {
+        return <Row className="mt-2">
+            <Col>
+                <AvailablePanel
+                    available_title={available_title}
+                    available_items={available_items}
+                    select_item={select_item}
+                    available_fields={available_fields}
+                    group_key={group_key}
+                    group_header_label={group_header_label}
+                />
+            </Col>
+            <Col>
+                <SelectPanel
+                    selected_fields={selected_fields}
+                    selected_title={selected_title}
+                    selected_items={selected_items}
+                    set_field={set_field}
+                    unselect_item={unselect_item}
+                />
+            </Col>
+        </Row>
+    }
 }
 
-function AvailableItemsList({ available_items, select_item, fields, id_key }) {
+function SelectPanel({ selected_title, selected_items, set_field, unselect_item, selected_fields }) {
+    return <Card>
+        <Card.Header className="mb-0">{selected_title}</Card.Header>
+        <Card.Body className="p-1">
+            <SelectedItemList
+                selected_items={selected_items}
+                set_field={set_field}
+                unselect_item={unselect_item}
+                fields={selected_fields}
+            />
+        </Card.Body>
+    </Card>
+}
+
+function AvailablePanel({ available_title, available_items, select_item, available_fields, group_key, group_header_label }) {
+    return <Card>
+        <Card.Header className="mb-0">{available_title}</Card.Header>
+        <Card.Body className="p-1">
+            {group_key ?
+                <AvailableItemsAccordian
+                    available_items={available_items}
+                    select_item={select_item}
+                    fields={available_fields}
+                    group_key={group_key}
+                    group_header_label={group_header_label}
+                />
+                :
+                <AvailableItemsList available_items={available_items} select_item={select_item} fields={available_fields} />
+            }
+        </Card.Body>
+    </Card>
+}
+
+function AvailableItemsList({ available_items, select_item, fields }) {
     return <Table bordered size="sm" className="mb-0">
         <thead>
             <tr>
@@ -93,14 +137,14 @@ function AvailableItemsList({ available_items, select_item, fields, id_key }) {
             </tr>
         </thead>
         <tbody>
-            {available_items.map(elem => <tr key={elem[id_key]}>
-                <AvailableItemElement elem={elem} fields={fields} on_click={() => select_item(elem[id_key])} />
+            {available_items.map(elem => <tr key={elem.id}>
+                <AvailableItemElement elem={elem} fields={fields} on_click={() => select_item(elem.id)} />
             </tr>)}
         </tbody>
     </Table>
 }
 
-function AvailableItemsAccordian({ available_items, select_item, group_key, group_header_label, fields, id_key }) {
+function AvailableItemsAccordian({ available_items, select_item, group_key, group_header_label, fields }) {
     let grouped_items = groupBy(available_items, group_key)
     let groups = Object.keys(grouped_items)
     return <div className="border">
@@ -116,8 +160,8 @@ function AvailableItemsAccordian({ available_items, select_item, group_key, grou
                                 </tr>
                             </thead>
                             <tbody>
-                                {grouped_items[entry].map((elem, index) => <tr key={elem[id_key]}>
-                                    <AvailableItemElement elem={elem} fields={fields} on_click={() => select_item(elem[id_key])} />
+                                {grouped_items[entry].map((elem, index) => <tr key={elem.id}>
+                                    <AvailableItemElement elem={elem} fields={fields} on_click={() => select_item(elem.id)} />
                                 </tr>)}
                             </tbody>
                         </Table>

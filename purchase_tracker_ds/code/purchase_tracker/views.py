@@ -52,7 +52,6 @@ class SupplierViewSet(viewsets.ViewSet):
         serializer = serializers.SupplierFullSerializer(supplier, many=False)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    ##[{"item":"item@4","expected_lead_time":"7 00:00:00"},{"item":"item@9","expected_lead_time":null},{"item":"item@10","expected_lead_time":null},{"item":"item@12","expected_lead_time":null}]
     @action(detail=True, methods=["put"])
     def update_supplied_items(self, request, pk=None):
         supplier = get_object_or_404(models.Supplier, pk=pk)
@@ -179,6 +178,15 @@ class OrderViewSet(viewsets.ViewSet):
         serializer = serializers.OrderUpdateSerializer(order, data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["patch"])
+    def complete(self, request, pk=None):
+        order = get_object_or_404(models.Order, pk=pk)
+        complete_value = request.data.get("complete")
+        order.complete = complete_value
+        order.save()
+        serializer = serializers.OrderReadSerializer(order, many=False)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def partial_update(self, request, pk=None):

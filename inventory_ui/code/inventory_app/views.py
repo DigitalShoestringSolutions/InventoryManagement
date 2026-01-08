@@ -499,25 +499,8 @@ def get_order(order_id):
 
 
 def fetch_all_withdrawls():
-
-    # TODO: make sure data formatted like this
-    # withdrawals = [
-    #     {
-    #         "item": utils.get_item_name(entry["child"]),
-    #         "location": utils.get_location_name(entry["from_parent"]),
-    #         "date_withdrawn": dateutil.parser.isoparse(entry["timestamp"]).strftime(
-    #             "%d %b %Y %H:%M"
-    #         ),
-    #         "units_withdrawn": entry["quantity"],
-    #         "withdrawn_by": entry["to_parent"].split("@")[
-    #             -1
-    #         ],  # TODO: maybe do properly with ID in ID manager
-    #     }
-    #     for entry in raw_withdrawals
-    # ]
-
-    url = "locations-ds.docker.local"  # TODO: move to settings.py
-    resp = requests.get(f"http://{url}/events/from/loc@")
+    url = settings.INVENTORY_DS_URL
+    resp = requests.get(f"http://{url}/history/withdrawals")
     return resp.json()
 
 

@@ -6,7 +6,6 @@ from io import BytesIO
 from openpyxl import Workbook
 from django.utils import timezone
 from django.contrib import messages
-from django.http import HttpResponseRedirect
 from django.db.models import F, ExpressionWrapper, fields
 from django.db import transaction
 from django.db.models import Count, Case, When, IntegerField, Sum, Max, Avg, F
@@ -26,6 +25,7 @@ import dateutil.parser
 import requests
 from . import utils
 from . import models
+from . import serializers
 from django.conf import settings
 
 ###
@@ -33,80 +33,129 @@ from django.conf import settings
 ###
 
 
+# @api_view(("GET",))
+# @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+# def state_items(request):
+#     item_locations = fetch_all_item_locations()
+
+#     grouped_locations = {}
+#     for location_entry in item_locations:
+#         id = location_entry["child"]
+#         if id not in grouped_locations:
+#             grouped_locations[id] = []
+#         location_record = {
+#             "location_id": location_entry["parent"],
+#             "location": utils.get_name(location_entry["parent"]),
+#             "quantity": location_entry["quantity"],
+#         }
+#         grouped_locations[id].append(location_record)
+
+#     # records = [
+#     #     {
+#     #         "id": item.id,
+#     #         "name": utils.get_name(item.id),
+#     #         "total_quantity": reduce(
+#     #             sum_quantities_helper, grouped_locations[item.id], 0
+#     #         ),
+#     #         "locations": grouped_locations[item.id],
+#     #     }
+#     #     for item in models.InventoryItem.objects.all()
+#     # ]
+
+#     records = [
+#         {
+#             "id": id,
+#             "name": utils.get_name(id),
+#             "total_quantity": reduce(sum_quantities_helper, entries, 0),
+#             "locations": entries,
+#         }
+#         for id, entries in grouped_locations.items()
+#     ]
+#     return Response(records, status=status.HTTP_200_OK)
+
+
+# def sum_quantities_helper(x, y):
+#     return x + y["quantity"]
+
+
 @api_view(("GET",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def state_items(request):
-    item_locations = fetch_all_item_locations()
-
-    grouped_locations = {}
-    for location_entry in item_locations:
-        id = location_entry["child"]
-        if id not in grouped_locations:
-            grouped_locations[id] = []
-        location_record = {
-            "location_id": location_entry["parent"],
-            "location": utils.get_name(location_entry["parent"]),
-            "quantity": location_entry["quantity"],
-        }
-        grouped_locations[id].append(location_record)
-
-    records = [
-        {
-            "id": item.id,
-            "name": utils.get_name(item.id),
-            "total_quantity": reduce(
-                sum_quantities_helper, grouped_locations[item.id], 0
-            ),
-            "locations": grouped_locations[item.id],
-        }
-        for item in models.InventoryItem.objects.all()
-    ]
-    return Response(records, status=status.HTTP_200_OK)
-
-
-def sum_quantities_helper(x, y):
-    return x + y["quantity"]
-
-
-@api_view(("GET",))
-@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
-def state_items_detailed(request):
     item_locations = (
         fetch_all_item_locations()
     )  # TODO: try async for parallel fetching - but profile
-
-    grouped_locations = {}
-    for location_entry in item_locations:
-        location_record = {
-            "location_id": location_entry["parent"],
-            "location": utils.get_name(location_entry["parent"]),
-            "quantity": location_entry["quantity"],
-        }
-
-        id = location_entry["child"]
-        if id not in grouped_locations:
-            grouped_locations[id] = []
-        grouped_locations[id].append(location_record)
 
     on_order = {
         record["item"]: record["remaining"] for record in fetch_items_on_order()
     }
 
-    records = [
-        {
+    processed_location_limits = []
+    grouped_results = {}
+    for location_entry in item_locations:
+        location_id = location_entry["parent"]
+        item_id = location_entry["child"]
+
+        location_limit_qs = models.LocationLimit.objects.filter(
+            item_id=item_id, location_id=location_id
+        )
+        if len(location_limit_qs) > 0:
+            entry = location_limit_qs.first()
+            location_limit = entry.minimum_unit
+            processed_location_limits.append(entry.id)
+        else:
+            location_limit = None
+
+        location_record = {
+            "id": location_id,
+            "name": utils.get_name(location_id),
+            "quantity": location_entry["quantity"],
+            "minimum_unit": location_limit,
+        }
+
+        if item_id not in grouped_results:
+            item, _created = models.InventoryItem.objects.get_or_create(id=item_id)
+            grouped_results[item_id] = {
+                "id": item_id,
+                "name": utils.get_name(item_id),
+                "quantity_per_unit": item.quantity_per_unit,
+                "minimum_unit": item.minimum_unit,
+                "on_order": on_order.get(item_id, None),
+                "total_quantity": 0,
+                "locations": [],
+            }
+        grouped_results[item_id]["locations"].append(location_record)
+        grouped_results[item_id]["total_quantity"] += location_record["quantity"]
+
+    unprocessed_item_limits = models.InventoryItem.objects.exclude(id__in=grouped_results.keys()).exclude(minimum_unit__isnull=True)
+    
+    for item in unprocessed_item_limits:
+        grouped_results[item.id] = {
             "id": item.id,
             "name": utils.get_name(item.id),
             "quantity_per_unit": item.quantity_per_unit,
             "minimum_unit": item.minimum_unit,
-            "total_quantity": reduce(
-                sum_quantities_helper, grouped_locations[item.id], 0
-            ),
-            "locations": grouped_locations.get(item.id, []),
             "on_order": on_order.get(item.id, None),
+            "total_quantity": 0,
+            "locations": [],
         }
-        for item in models.InventoryItem.objects.all()
-    ]
-    return Response(records, status=status.HTTP_200_OK)
+
+    unprocessed_location_limits = models.LocationLimit.objects.exclude(
+        id__in=processed_location_limits
+    )
+
+    for entry in unprocessed_location_limits:
+        item_id = entry.item_id.id
+
+        grouped_results[item_id]["locations"].append(
+            {
+                "id": entry.location_id,
+                "name": utils.get_name(entry.location_id),
+                "quantity": 0,
+                "minimum_unit": entry.minimum_unit,
+            }
+        )
+
+    return Response(grouped_results.values(), status=status.HTTP_200_OK)
 
 
 @api_view(("GET",))
@@ -114,15 +163,27 @@ def state_items_detailed(request):
 def state_locations(request):
     item_locations = fetch_all_item_locations()
 
+    processed_location_limits = []
     grouped_items = {}
     for location_entry in item_locations:
         location_id = location_entry["parent"]
         item_id = location_entry["child"]
 
+        location_limit_qs = models.LocationLimit.objects.filter(
+            item_id=item_id, location_id=location_id
+        )
+        if len(location_limit_qs) > 0:
+            entry = location_limit_qs.first()
+            location_limit = entry.minimum_unit
+            processed_location_limits.append(entry.id)
+        else:
+            location_limit = None
+
         item_record = {
             "id": item_id,
             "name": utils.get_name(item_id),
             "quantity": location_entry["quantity"],
+            "minimum_unit": location_limit,
         }
 
         if location_id not in grouped_items:
@@ -132,6 +193,22 @@ def state_locations(request):
                 "items": [],
             }
         grouped_items[location_id]["items"].append(item_record)
+
+    unprocessed_location_limits = models.LocationLimit.objects.exclude(
+        id__in=processed_location_limits
+    )
+
+    for entry in unprocessed_location_limits:
+        location_id = entry.location_id
+
+        grouped_items[location_id]["items"].append(
+            {
+                "id": entry.item_id.id,
+                "name": utils.get_name(entry.item_id.id),
+                "quantity": 0,
+                "minimum_unit": entry.minimum_unit,
+            }
+        )
 
     return Response(grouped_items.values(), status=status.HTTP_200_OK)
 
@@ -174,7 +251,11 @@ def list_items(request):
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def list_items_at_location(request, location_id):
     out = [
-        {"id": record["child"], "name": utils.get_name(record["child"])}
+        {
+            "id": record["child"],
+            "name": utils.get_name(record["child"]),
+            "quantity": record["quantity"],
+        }
         for record in fetch_items_at_location(location_id)
     ]
     return Response(out, status=status.HTTP_200_OK)
@@ -201,35 +282,60 @@ def list_unregistered_items(request):
 @api_view(("POST",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def action_withdraw(request):
-    item_id = request.POST.get("item")
-    location_id = request.POST.get("location")
-    units_withdrawn = int(request.POST.get("units_withdrawn"))
-    withdrawn_by = request.POST.get("withdrawn_by")
+    location_id = request.data.get("location")
+    withdrawn_by = request.data.get("withdrawn_by")
+    item_list = request.data.get("items")
 
-    # TODO: handle errors
-    resp = make_transfer(
-        item_id, location_id, f"person@{withdrawn_by}", units_withdrawn
+    print(f"{location_id}, {withdrawn_by}, {item_list}")
+
+    withdrawn = []
+    errors = []
+    for item in item_list:
+        try:
+            make_transfer(
+                item["id"], location_id, f"person@{withdrawn_by}", int(item["quantity"])
+            )
+            withdrawn.append(
+                {"item": utils.get_name(item["id"]), "quantity": int(item["quantity"])}
+            )
+        except:
+            errors.append({"item": utils.get_name(item["id"])})
+
+    return Response(
+        {"withdrawn": withdrawn, "errors": errors}, status=status.HTTP_200_OK
     )
-
-    return Response(resp, status=status.HTTP_200_OK)
 
 
 @api_view(("POST",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def action_transfer(request):
-    item_id = request.POST.get("item")
-    from_id = request.POST.get("from")
-    to_id = request.POST.get("to")
-    units_withdrawn = int(request.POST.get("units_withdrawn"))
+    from_location = request.data.get("from_location")
+    to_location = request.data.get("to_location")
+    item_list = request.data.get("items")
 
-    # TODO: handle errors
-    resp = make_transfer(item_id, from_id, to_id, units_withdrawn)
+    transferred = []
+    errors = []
+    for item in item_list:
+        try:
+            make_transfer(
+                item["id"],
+                from_location,
+                to_location,
+                int(item["quantity"]),
+            )
+            transferred.append(
+                {"item": utils.get_name(item["id"]), "quantity": int(item["quantity"])}
+            )
+        except:
+            errors.append({"item": utils.get_name(item["id"])})
 
-    return Response(resp, status=status.HTTP_200_OK)
+    return Response(
+        {"transferred": transferred, "errors": errors}, status=status.HTTP_200_OK
+    )
 
 
 ###
-### ACTION
+### SUMMARY
 ###
 
 
@@ -310,6 +416,99 @@ def summary_on_order(request):
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def summary_time_till_order(request):
     pass
+
+
+###
+### MISCELLANEOUS
+###
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def history_withdrawals(request):
+
+    raw_withdrawals = fetch_all_withdrawls()
+
+    withdrawals = [
+        {
+            "item": utils.get_name(entry["child"]),
+            "location": utils.get_name(entry["from_parent"]),
+            "date_withdrawn": dateutil.parser.isoparse(entry["timestamp"]).strftime(
+                "%d %b %Y %H:%M"
+            ),
+            "quantity": entry["quantity"],
+            "withdrawn_by": entry["to_parent"].split("@")[
+                -1
+            ],  # TODO: maybe do properly with ID in ID manager
+        }
+        for entry in raw_withdrawals
+    ]
+
+    return Response(withdrawals, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def history_transfers(request):
+
+    raw_transfers = fetch_all_transfers()
+
+    transfers = [
+        {
+            "item": utils.get_name(entry["child"]),
+            "from_location": utils.get_name(entry["from_parent"]),
+            "date_transferred": dateutil.parser.isoparse(entry["timestamp"]).strftime(
+                "%d %b %Y %H:%M"
+            ),
+            "quantity": entry["quantity"],
+            "to_location": utils.get_name(entry["to_parent"]),
+        }
+        for entry in raw_transfers
+    ]
+
+    return Response(transfers, status=status.HTTP_200_OK)
+
+
+class ItemViewSet(viewsets.ViewSet):
+    def create(self, request):
+        """
+        Create new item
+        """
+        name = request.data.get("name")
+        if name:
+            url = settings.IDENTITY_PROVIDER_URL
+            resp = requests.post(
+                f"http://{url}/id/create", {"name": name, "type": "item"}
+            )
+            if resp.status_code == 201:
+                obj = resp.json()
+                item = models.InventoryItem.objects.create(id=obj["id"])
+                serializer = serializers.ItemSerializer(item)
+                return Response(serializer.data, status=201)
+            else:
+                return Response(resp.json, status=resp.status_code)
+        else:
+            return Response(
+                {"name": "name not provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+    def retrieve(self, request, pk=None):
+        """
+        Fetch item details
+        """
+        item = get_object_or_404(models.InventoryItem, pk=pk)
+        serializer = serializers.ItemSerializer(item, many=False)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def update(self, request, pk=None):
+        """
+        Update item
+        """
+        item = get_object_or_404(models.InventoryItem, pk=pk)
+        serializer = serializers.ItemSerializer(item, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 #
@@ -462,17 +661,8 @@ def analyze(request):
     return render(request, "inventory_app/analyze.html", context)
 
 
-def ItemViewset(request):
-    create_new_item(
-        add_form.data["item_name"],
-        add_form.data["quantity_per_unit"],
-        add_form.data["minimum_unit"],
-    )
-    pass
-
-
 def get_all_inventoryItems(request):
-    inv_items = InventoryItem.objects.all()
+    inv_items = models.InventoryItem.objects.all()
     # # group by item_id
     # grouped_items = {}
     # for item in raw_items:
@@ -781,7 +971,13 @@ def fetch_location_list():
 
 def fetch_all_withdrawls():
     url = settings.LOCATION_DS_URL
-    resp = requests.get(f"http://{url}/events/from/loc@")
+    resp = requests.get(f"http://{url}/events/from/loc@/to/person@")
+    return resp.json()
+
+
+def fetch_all_transfers():
+    url = settings.LOCATION_DS_URL
+    resp = requests.get(f"http://{url}/events/from/loc@/to/loc@")
     return resp.json()
 
 

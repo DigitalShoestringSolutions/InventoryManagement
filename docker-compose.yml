@@ -1,27 +1,27 @@
 services:
-  web:
-    build: ./inventory_ui
-    command: sh -c "python manage.py collectstatic --noinput &&
-      python manage.py migrate &&
-      python manage.py runserver 0.0.0.0:80"
-    volumes:
-      - ./inventory_ui/code:/app
-      - ./inventory_ui/data:/app/data
-      - ./inventory_ui/config:/app/config
-    ports:
-      - "80:80"
-    networks:
-      internal:
-        aliases:
-          - web.docker.local
-    logging:
-      driver: syslog
-      options:
-        tag: docker-web-ui
-    restart: unless-stopped
-    env_file:
-      - django_secret_key
-      - default_password
+  # web:
+  #   build: ./inventory_ui
+  #   command: sh -c "python manage.py collectstatic --noinput &&
+  #     python manage.py migrate &&
+  #     python manage.py runserver 0.0.0.0:80"
+  #   volumes:
+  #     - ./inventory_ui/code:/app
+  #     - ./inventory_ui/data:/app/data
+  #     - ./inventory_ui/config:/app/config
+  #   ports:
+  #     - "80:80"
+  #   networks:
+  #     internal:
+  #       aliases:
+  #         - web.docker.local
+  #   logging:
+  #     driver: syslog
+  #     options:
+  #       tag: docker-web-ui
+  #   restart: unless-stopped
+  #   env_file:
+  #     - django_secret_key
+  #     - default_password
   
   inventory-ds:
     build: ./inventory_ds
@@ -107,6 +107,20 @@ services:
             driver: syslog
             options:
                     tag: docker-po-tracker-ui
+    restart: unless-stopped
+
+  inv-ui-2:
+    extends:
+        file: inventory_ui_2/app.yml
+        service: dev
+    networks:
+        internal:
+            aliases:
+                - inventory-ui.docker.local
+    logging:
+            driver: syslog
+            options:
+                    tag: docker-inventory-ui
     restart: unless-stopped
 
   identity-sds:
