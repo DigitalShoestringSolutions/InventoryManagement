@@ -57,3 +57,18 @@ class ItemSerializer(serializers.ModelSerializer):
             entry.delete()
 
         return item_instance
+
+class AllocationSerializer(serializers.ModelSerializer):
+    item_name = serializers.SerializerMethodField()
+    class Meta:
+        model = models.InventoryAllocation
+        fields = ["id","item_id","item_name","allocated_quantity","reference","created_at","expected_completion"]
+
+    def get_item_name(self, obj):
+        return utils.get_name(obj.item_id.id)
+
+    def to_representation(self, instance):
+        output = super().to_representation(instance)
+        output["fulfilled"] = instance.total_fulfilled
+        output["remaining"] = instance.remaining_quantity
+        return output

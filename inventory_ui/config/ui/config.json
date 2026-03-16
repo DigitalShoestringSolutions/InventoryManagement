@@ -1,0 +1,13 @@
+{
+  "mqtt": {
+    "host": "",
+    "port": 9001,
+    "prefix": []
+  },
+  "db": {
+    "host": "",
+    "port": 8000
+  },
+  "order_page_port": null,
+  "allocations": true
+}

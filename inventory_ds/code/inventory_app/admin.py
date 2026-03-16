@@ -13,7 +13,7 @@ class InventoryItemAdmin(admin.ModelAdmin):
         return utils.get_name(obj.id)
 
 
-admin.site.register(models.LocationLimit)
+@admin.register(models.LocationLimit)
 class LocationLimitAdmin(admin.ModelAdmin):
     list_display = ["fetched_item_name", "fetched_location_name","minimum_unit"]
     fields = ["item_id", "fetched_item_name", "location_id", "fetched_location_name", "minimum_unit"]
@@ -24,3 +24,12 @@ class LocationLimitAdmin(admin.ModelAdmin):
 
     def fetched_location_name(self, obj):
         return utils.get_name(obj.location_id)
+
+@admin.register(models.InventoryAllocation)
+class InventoryAllocationAdmin(admin.ModelAdmin):
+    list_display = ["reference", "allocated_quantity", "item_id"]
+
+
+@admin.register(models.AllocationFulfillment)
+class AllocationFulfillmentAdmin(admin.ModelAdmin):
+    list_display = ["allocation","quantity"]

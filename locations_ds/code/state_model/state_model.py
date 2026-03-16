@@ -14,7 +14,6 @@ class StateModel:
         self.pushsocket = context.socket(zmq.PUSH)
         self.pushsocket.connect(zmq_config['sub_ep'])
 
-
     def start(self):
         t = threading.Thread(target = self.run)
         t.start()
@@ -33,17 +32,18 @@ class StateModel:
 
     def handle_message(self,raw_msg):
         print(f"handling: {raw_msg}")
-        #listen for incoming events
+        # listen for incoming events
         try:
-            transfer_type, *states =  do_transfer(raw_msg)
-            
+            result, _event =  do_transfer(raw_msg)
+            transfer_type, *states = result
+
             output = []
             if transfer_type == TransferType.INDIVIDUAL:
                 output = handle_individual_update(*states)
             elif transfer_type == TransferType.COLLECTION:
                 output = handle_collection_update(*states)
 
-            #send update
+            # send update
             for msg in output:
                 self.pushsocket.send_multipart([msg["topic"].encode(),json.dumps(msg["payload"]).encode()])
 

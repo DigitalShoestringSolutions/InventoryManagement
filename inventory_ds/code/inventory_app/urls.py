@@ -33,6 +33,8 @@ urlpatterns.extend(
         path("list/items/at/<str:location_id>", views.list_items_at_location),
         # all items that exist but aren't registered with inventory
         path("list/items/unregistered", views.list_unregistered_items),
+        # all allocations
+        path("list/allocations", views.list_allocations),
         ##
         ## /action/ -- Actions that can be performed
         ##
@@ -40,6 +42,12 @@ urlpatterns.extend(
         path("action/withdraw", views.action_withdraw),
         # transfer items from one location to another
         path("action/transfer", views.action_transfer),
+        # create/save a new allocation
+        path("action/allocation", views.action_handle_allocation),
+        # delete an allocation
+        path("action/delete-allocation", views.action_delete_allocation),
+        # create new stock
+        path("action/new-stock", views.action_new_stock),
         ##
         ## /summary/ -- Summary / Insights about inventory control
         ##
@@ -64,7 +72,7 @@ urlpatterns.extend(
         ##
         # get list of all withdrawals
         path("history/withdrawals", views.history_withdrawals),
-        
         path("history/transfers", views.history_transfers),
+        path("history/new-stock", views.history_new_stock),
     ]
 )

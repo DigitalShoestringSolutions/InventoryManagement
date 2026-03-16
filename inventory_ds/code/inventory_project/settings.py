@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
     "inventory_app",
 ]
 
@@ -131,7 +132,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
 LOCATION_DS_URL = "locations-ds.docker.local"
 IDENTITY_PROVIDER_URL = "identity-ds.docker.local"
-PO_TRACKER_DS_URL = "purchase-tracker-ds.docker.local"
+PO_TRACKER_DS_URL = None
 
 
 try:

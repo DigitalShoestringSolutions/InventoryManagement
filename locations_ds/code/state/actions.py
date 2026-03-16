@@ -44,7 +44,7 @@ def do_transfer(raw_msg):
         result = TransferType.INDIVIDUAL, oldState, newState
 
     event.save()
-    return result
+    return result, event
 
 
 def do_collection_transfer(event):

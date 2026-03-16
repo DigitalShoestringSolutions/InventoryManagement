@@ -8,7 +8,18 @@ from django.utils import timezone
 from django.contrib import messages
 from django.db.models import F, ExpressionWrapper, fields
 from django.db import transaction
-from django.db.models import Count, Case, When, IntegerField, Sum, Max, Avg, F
+from django.db.models import (
+    Count,
+    Case,
+    When,
+    IntegerField,
+    Sum,
+    Max,
+    Avg,
+    F,
+    Sum,
+    Value,
+)
 from django.db.models.functions import Coalesce
 
 from rest_framework.decorators import (
@@ -19,6 +30,7 @@ from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
 from rest_framework.response import Response
 from rest_framework import viewsets, status
 
+import traceback
 import datetime
 from functools import reduce
 import dateutil.parser
@@ -89,6 +101,23 @@ def state_items(request):
         record["item"]: record["remaining"] for record in fetch_items_on_order()
     }
 
+    allocations = {
+        entry.item_id.id: entry.remaining_quantity
+        for entry in models.InventoryAllocation.objects.annotate(
+            total_fulfilled=Coalesce(Sum("fulfillments__quantity"), Value(0))
+        )
+        .annotate(
+            # 2. Calculate remaining by subtracting fulfilled from allocated
+            remaining_quantity=F("allocated_quantity")
+            - F("total_fulfilled")
+        )
+        .filter(
+            # 3. (Optional) Only get allocations that still have items pending
+            remaining_quantity__gt=0
+        )
+        .order_by("item_id")
+    }  # Group results by item
+
     processed_location_limits = []
     grouped_results = {}
     for location_entry in item_locations:
@@ -121,13 +150,23 @@ def state_items(request):
                 "minimum_unit": item.minimum_unit,
                 "on_order": on_order.get(item_id, None),
                 "total_quantity": 0,
+                "allocated": allocations.get(item_id, None),
+                "available": 0,
                 "locations": [],
             }
         grouped_results[item_id]["locations"].append(location_record)
         grouped_results[item_id]["total_quantity"] += location_record["quantity"]
+        grouped_results[item_id]["available"] = (
+            grouped_results[item_id]["total_quantity"]
+            - grouped_results[item_id]["allocated"]
+            if grouped_results[item_id]["allocated"] is not None
+            else grouped_results[item_id]["total_quantity"]
+        )
 
-    unprocessed_item_limits = models.InventoryItem.objects.exclude(id__in=grouped_results.keys()).exclude(minimum_unit__isnull=True)
-    
+    unprocessed_item_limits = models.InventoryItem.objects.exclude(
+        id__in=grouped_results.keys()
+    ).exclude(minimum_unit__isnull=True)
+
     for item in unprocessed_item_limits:
         grouped_results[item.id] = {
             "id": item.id,
@@ -154,6 +193,19 @@ def state_items(request):
                 "minimum_unit": entry.minimum_unit,
             }
         )
+        
+    unprocessed_allocations = allocations.keys() - grouped_results.keys()
+    for item_id in unprocessed_allocations:
+        grouped_results[item_id] = {
+            "id": item_id,
+            "name": utils.get_name(item_id),
+            "minimum_unit": 0,
+            "on_order": on_order.get(item_id, None),
+            "total_quantity": 0,
+            "allocated": allocations.get(item_id, None),
+            "available": 0 - allocations.get(item_id, None),
+            "locations": [],
+        }
 
     return Response(grouped_results.values(), status=status.HTTP_200_OK)
 
@@ -201,6 +253,12 @@ def state_locations(request):
     for entry in unprocessed_location_limits:
         location_id = entry.location_id
 
+        if location_id not in grouped_items:
+            grouped_items[location_id] = {
+                "id": location_id,
+                "name": utils.get_name(location_id),
+                "items": [],
+            }
         grouped_items[location_id]["items"].append(
             {
                 "id": entry.item_id.id,
@@ -274,6 +332,38 @@ def list_unregistered_items(request):
     return Response(difference, status=status.HTTP_200_OK)
 
 
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def list_allocations(request):
+    allocations = (
+        models.InventoryAllocation.objects.annotate(
+            total_fulfilled=Coalesce(Sum("fulfillments__quantity"), Value(0))
+        )
+        .annotate(
+            # 2. Calculate remaining by subtracting fulfilled from allocated
+            remaining_quantity=F("allocated_quantity")
+            - F("total_fulfilled")
+        )
+        .order_by("item_id")
+    )
+    serializer = serializers.AllocationSerializer(
+        allocations, many=True, context={"request": request}
+    )
+
+    # group by reference
+    output = {}
+    for entry in serializer.data:
+        ref = entry["reference"]
+        if ref not in output:
+            output[ref] = {
+                "reference": ref,
+                "allocated_items": [],
+            }
+        output[ref]["allocated_items"].append(entry)
+
+    return Response(output.values(), status=status.HTTP_200_OK)
+
+
 ###
 ### ACTION
 ###
@@ -281,9 +371,34 @@ def list_unregistered_items(request):
 
 @api_view(("POST",))
 @renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def action_new_stock(request):
+    reference = request.data.get("reference", "none")
+    location_id = request.data.get("location")
+    items = request.data.get("items")
+
+    if location_id is None or location_id.strip() == "":
+        return Response(
+            {"location": "Location is required."}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+    added = []
+    errors = []
+
+    for item in items:
+        item_id = item["id"]
+        quantity = int(item["quantity"])
+        make_transfer(item_id, f"stock@{reference}", location_id, quantity)
+        added.append({"item": utils.get_name(item["id"]), "quantity": quantity})
+
+    return Response({"added": added, "errors": errors}, status=status.HTTP_200_OK)
+
+
+@api_view(("POST",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
 def action_withdraw(request):
     location_id = request.data.get("location")
-    withdrawn_by = request.data.get("withdrawn_by")
+    withdrawn_by = request.data.get("withdrawn_by", "none")
+    allocation_ref = request.data.get("allocation")
     item_list = request.data.get("items")
 
     print(f"{location_id}, {withdrawn_by}, {item_list}")
@@ -292,13 +407,24 @@ def action_withdraw(request):
     errors = []
     for item in item_list:
         try:
-            make_transfer(
-                item["id"], location_id, f"person@{withdrawn_by}", int(item["quantity"])
+            quantity = int(item["quantity"])
+            transfer = make_transfer(
+                item["id"], location_id, f"person@{withdrawn_by}", quantity
             )
-            withdrawn.append(
-                {"item": utils.get_name(item["id"]), "quantity": int(item["quantity"])}
-            )
+            withdrawal_id = transfer["event"]["event_id"]
+            if allocation_ref:
+                allocation = models.InventoryAllocation.objects.filter(
+                    reference=allocation_ref, item_id=item["id"]
+                )[0]
+                models.AllocationFulfillment.objects.create(
+                    allocation=allocation,
+                    quantity=quantity,
+                    withdrawal_id=withdrawal_id,
+                )
+
+            withdrawn.append({"item": utils.get_name(item["id"]), "quantity": quantity})
         except:
+            traceback.print_exc()
             errors.append({"item": utils.get_name(item["id"])})
 
     return Response(
@@ -332,6 +458,107 @@ def action_transfer(request):
     return Response(
         {"transferred": transferred, "errors": errors}, status=status.HTTP_200_OK
     )
+
+
+@api_view(("POST",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def action_handle_allocation(request):
+    item_list = request.data.get("items")
+    allocation_reference = request.data.get("allocation_reference")
+    expected_completion_str = request.data.get("date_expected_completion")
+
+    errors = {}
+
+    if expected_completion_str:
+        expected_completion = dateutil.parser.isoparse(expected_completion_str)
+    else:
+        expected_completion = None
+        errors["date_expected_completion"] = "Expected completion date is required."
+
+    if allocation_reference is None or allocation_reference.strip() == "":
+        errors["allocation_reference"] = "Allocation reference is required."
+
+    if len(item_list) == 0:
+        errors["items"] = "At least one item must be specified for allocation."
+
+    if len(errors) > 0:
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+    prior_allocations = { entry.id: entry for entry in models.InventoryAllocation.objects.filter(
+        reference=allocation_reference
+    )}
+
+    created_allocations = []
+    updated_allocations = []
+    print(f"item_list: {item_list}")
+    for item in item_list:
+        try:
+            allocation, created = models.InventoryAllocation.objects.update_or_create(
+                item_id=get_object_or_404(models.InventoryItem, pk=item["item"]),
+                reference=allocation_reference,
+                defaults={
+                    "allocated_quantity": int(item["quantity_requested"]),
+                    "expected_completion": expected_completion,
+                },
+            )
+            
+            print(f"allocation: {allocation}, created: {created}")
+
+            if created:
+                created_allocations.append(
+                    {
+                        "item": utils.get_name(item["item"]),
+                        "quantity": int(item["quantity_requested"]),
+                        "allocation_id": allocation.id,
+                    }
+                )
+            else:
+                updated_allocations.append(
+                    {
+                        "item": utils.get_name(item["item"]),
+                        "quantity": int(item["quantity_requested"]),
+                        "allocation_id": allocation.id,
+                    }
+                )
+                del prior_allocations[allocation.id]
+        except Exception as e:
+            print(e)
+            errors.append({"item": utils.get_name(item["item"])})
+
+    print(f"created: {created_allocations}, updated: {updated_allocations}, deleted: {list(prior_allocations.values())}, errors: {errors}")
+    
+    deleted_allocations = []
+    for allocation in prior_allocations.values():
+        allocation.delete()
+        deleted_allocations.append(
+            {
+                "item": utils.get_name(allocation.item_id.id),
+                "allocation_id": allocation.id,
+            }
+        )
+
+    return Response(
+        {"created_allocations": created_allocations, "deleted_allocations": deleted_allocations, "updated_allocations": updated_allocations, "errors": errors},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(("POST",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def action_delete_allocation(request):
+    allocation_reference = request.data.get("allocation_reference")
+
+    if allocation_reference is None or allocation_reference.strip() == "":
+        return Response(
+            {"allocation_reference": "Allocation reference is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    deleted_count, _ = models.InventoryAllocation.objects.filter(
+        reference=allocation_reference
+    ).delete()
+
+    return Response({"deleted_count": deleted_count}, status=status.HTTP_200_OK)
 
 
 ###
@@ -429,6 +656,11 @@ def history_withdrawals(request):
 
     raw_withdrawals = fetch_all_withdrawls()
 
+    allocation_fulfillments = models.AllocationFulfillment.objects.all()
+    fulfillment_map = {}
+    for fulfillment in allocation_fulfillments:
+        fulfillment_map[fulfillment.withdrawal_id] = fulfillment
+
     withdrawals = [
         {
             "item": utils.get_name(entry["child"]),
@@ -437,6 +669,11 @@ def history_withdrawals(request):
                 "%d %b %Y %H:%M"
             ),
             "quantity": entry["quantity"],
+            "allocation_reference": (
+                fulfillment_map.get(entry["event_id"], None).allocation.reference
+                if entry["event_id"] in fulfillment_map
+                else None
+            ),
             "withdrawn_by": entry["to_parent"].split("@")[
                 -1
             ],  # TODO: maybe do properly with ID in ID manager
@@ -467,6 +704,26 @@ def history_transfers(request):
     ]
 
     return Response(transfers, status=status.HTTP_200_OK)
+
+
+@api_view(("GET",))
+@renderer_classes((JSONRenderer, BrowsableAPIRenderer))
+def history_new_stock(request):
+    raw_new_stock = fetch_all_new_stock()
+
+    new_stock = [
+        {
+            "item": utils.get_name(entry["child"]),
+            "date_added": dateutil.parser.isoparse(entry["timestamp"]).strftime(
+                "%d %b %Y %H:%M"
+            ),
+            "quantity": entry["quantity"],
+            "location": utils.get_name(entry["to_parent"]),
+        }
+        for entry in raw_new_stock
+    ]
+
+    return Response(new_stock, status=status.HTTP_200_OK)
 
 
 class ItemViewSet(viewsets.ViewSet):
@@ -981,6 +1238,12 @@ def fetch_all_transfers():
     return resp.json()
 
 
+def fetch_all_new_stock():
+    url = settings.LOCATION_DS_URL
+    resp = requests.get(f"http://{url}/events/from/stock@/to/loc@")
+    return resp.json()
+
+
 def create_new_id(name):
     payload = {"name": str(name), "type": "item"}
     url = settings.IDENTITY_PROVIDER_URL
@@ -989,6 +1252,8 @@ def create_new_id(name):
 
 
 def fetch_items_on_order():
-    url = settings.PO_TRACKER_DS_URL
+    url = getattr(settings, "PO_TRACKER_DS_URL", None)
+    if not url:
+        return []
     resp = requests.get(f"http://{url}/api/ordered_item")
     return resp.json()

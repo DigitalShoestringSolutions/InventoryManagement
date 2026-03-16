@@ -1,28 +1,4 @@
 services:
-  # web:
-  #   build: ./inventory_ui
-  #   command: sh -c "python manage.py collectstatic --noinput &&
-  #     python manage.py migrate &&
-  #     python manage.py runserver 0.0.0.0:80"
-  #   volumes:
-  #     - ./inventory_ui/code:/app
-  #     - ./inventory_ui/data:/app/data
-  #     - ./inventory_ui/config:/app/config
-  #   ports:
-  #     - "80:80"
-  #   networks:
-  #     internal:
-  #       aliases:
-  #         - web.docker.local
-  #   logging:
-  #     driver: syslog
-  #     options:
-  #       tag: docker-web-ui
-  #   restart: unless-stopped
-  #   env_file:
-  #     - django_secret_key
-  #     - default_password
-  
   inventory-ds:
     build: ./inventory_ds
     command: sh -c "python manage.py collectstatic --noinput &&
@@ -78,40 +54,9 @@ services:
       - django_secret_key
       - default_password
 
-  purchase-tracker-ds:
+  inv-ui:
     extends:
-      file: purchase_tracker_ds/app.yml
-      service: app
-    networks:
-      internal:
-        aliases:
-          - purchase-tracker-ds.docker.local
-    logging:
-      driver: syslog
-      options:
-        tag: docker-purchase-tracker-ds
-    restart: unless-stopped
-    env_file:
-      - django_secret_key
-      - default_password
-
-  purchase-tracker-ui:
-    extends:
-        file: purchase_tracker_ui/app.yml
-        service: dev
-    networks:
-        internal:
-            aliases:
-                - po-tracker-ui.docker.local
-    logging:
-            driver: syslog
-            options:
-                    tag: docker-po-tracker-ui
-    restart: unless-stopped
-
-  inv-ui-2:
-    extends:
-        file: inventory_ui_2/app.yml
+        file: inventory_ui/app.yml
         service: dev
     networks:
         internal:

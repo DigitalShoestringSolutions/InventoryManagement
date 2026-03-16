@@ -19,12 +19,20 @@ class NodeManager(models.Manager):
 
 
 class Node(models.Model):
-    id = models.CharField(max_length=24, primary_key=True)
+    auto_id = models.BigAutoField(primary_key=True)
+    id = models.CharField(max_length=24, null=True, blank=True)
     type = models.ForeignKey(NodeType, on_delete=models.CASCADE)
     objects = NodeManager()
 
     class Meta:
         verbose_name_plural = "Graph Nodes"
+        # This creates the unique constraint at the database level
+        constraints = [
+            models.UniqueConstraint(
+                fields=['type', 'id'], 
+                name='unique_type_id_combination'
+            )
+        ]
 
     def __str__(self):
         return f"{self.type}@{self.id}"
